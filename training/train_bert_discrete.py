@@ -12,20 +12,21 @@ random.seed(42)
 torch.manual_seed(42)
 
 parser = ArgumentParser("Transform data using discrete optimization")
-parser.add_argument("--data", type=str, default="cola", help="The dataset to use")
+parser.add_argument("--data", type=str, default="rotten_tomatoes", help="The dataset to use")
 parser.add_argument("--beam_size", type=int, default=1, help="The beam size to use")
 parser.add_argument("--batch_size", type=int, default=8, help="The batch size to use")
 parser.add_argument("--num_of_samples", type=int, default=1000, help="The number of samples to use")
-parser.add_argument("--run", type=str, default="first", help="The number of run")
+parser.add_argument("--model_name", type=str, default="bert-large-cased", help="The model to use")
+parser.add_argument("--device", type=str, default="cuda:0", help="The device to use")
 args = parser.parse_args()
 
-device = "cuda:0"
 data = args.data
 beam_size = args.beam_size
 batch_size = args.batch_size
 num_of_samples = args.num_of_samples
-run = args.run
-dataset = json.load(open(f"{num_of_samples}_transformed_{data}_beam_{beam_size}_data_normalize.json", "r"))
+model_name = args.model_name
+device = args.device
+dataset = json.load(open(f"../data/{model_name}/{num_of_samples}_transformed_{data}_beam_{beam_size}_data.json", "r"))
 sentences = dataset["original_sentences"]
 labels = dataset["labels"]
 transformed_sentences = dataset["transformed_sentences"]
@@ -37,12 +38,10 @@ sentences = [sentences[i] for i in shuffled_indices]
 labels = [labels[i] for i in shuffled_indices]
 
 labels = torch.LongTensor(labels)
-model = BertForSequenceClassification.from_pretrained("bert-base-uncased", num_labels=2)
-tokenizer = BertTokenizerFast.from_pretrained("bert-base-uncased")
-# Freeze token embedding layer
-# model.bert.embeddings.word_embeddings.weight.requires_grad = False
-
+model = BertForSequenceClassification.from_pretrained(model_name, num_labels=2)
+tokenizer = BertTokenizerFast.from_pretrained(model_name)
 model.to(device)
+
 train_sentences = transformed_sentences[:int(num_of_samples * 0.8)]
 train_labels = labels[:int(num_of_samples * 0.8)]
 
@@ -58,7 +57,7 @@ tokenized_test_set["labels"] = test_labels
 test_dataset = MyDataset(tokenized_test_set)
 
 optimizer = torch.optim.AdamW(model.parameters(), lr=1e-5)
-result_file = f"results/{num_of_samples}_{data}_beam_{beam_size}_b_{batch_size}_normalize_result_{run}.txt"
+result_file = f"../results/{model_name}/{num_of_samples}_{data}_beam_{beam_size}_b_{batch_size}_result.txt"
 best_test_f1 = 0
 patience = 5
 current_patience = 0
@@ -69,8 +68,8 @@ while True:
     overall_train_loss = 0
     train_predictions = []
     train_labels = []
+    model.train()
     for training_batch in train_loop:
-        model.train()
         optimizer.zero_grad()
         input_ids = training_batch["input_ids"].to(device)
         attention_mask = training_batch["attention_mask"].to(device)
@@ -103,8 +102,8 @@ while True:
     overall_test_loss = 0
     test_predictions = []
     test_labels = []
+    model.eval()
     for testing_batch in test_loop:
-        model.eval()
         input_ids = testing_batch["input_ids"].to(device)
         attention_mask = testing_batch["attention_mask"].to(device)
         labels = testing_batch["labels"].to(device)
